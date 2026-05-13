@@ -121,10 +121,17 @@ def fetch_cn_index(code):
         print(f"国内指数抓取失败: {e}")
         return "抓取失败", 0
 
-# ===================== 抓取港股指数（腾讯财经，100%稳定） =====================
+# ===================== 抓取港股指数（适配新接口） =====================
 def fetch_hk_index(code):
     try:
-        url = f"https://qt.gtimg.cn/q=r_hk_{code}"
+        # 适配腾讯新接口格式
+        if code == "HSI":
+            url = "https://qt.gtimg.cn/q=r_hkHSI"
+        elif code == "HSTECH":
+            url = "https://qt.gtimg.cn/q=r_hkHSTECH"
+        else:
+            url = f"https://qt.gtimg.cn/q=r_hk{code}"
+        
         resp = safe_get(url)
         text = resp.text
         parts = text.split("~")
