@@ -1,20 +1,22 @@
 name: 每日全球指数抓取
 on:
   schedule:
-    - cron: '0 10 * * *'  # 北京时间18:00运行
-  workflow_dispatch:      # 支持手动触发
+    - cron: '0 10 * * *'  # 北京时间18:00
+  workflow_dispatch:
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # 明确授予写入权限
+      contents: write
+      pages: write
+      id-token: write
     steps:
       - name: 拉取代码
-        uses: actions/checkout@v5  # 升级到支持Node.js 24的版本
+        uses: actions/checkout@v5
 
       - name: 安装Python
-        uses: actions/setup-python@v6  # 升级到支持Node.js 24的版本
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -25,7 +27,19 @@ jobs:
         run: python crawl_index.py
 
       - name: 提交数据
-        uses: EndBug/add-and-commit@v10  # 升级到支持Node.js 24的版本
+        uses: EndBug/add-and-commit@v10
         with:
           message: '自动更新指数数据'
           add: '*.csv *.html'
+
+      # 👇 下面这三部分就是【自动部署网页】的关键代码
+      - name: 设置Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传网页文件
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: 部署到GitHub Pages
+        uses: actions/deploy-pages@v4
