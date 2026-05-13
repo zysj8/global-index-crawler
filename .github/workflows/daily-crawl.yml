@@ -7,14 +7,16 @@ on:
 jobs:
   crawl:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 明确授予写入权限
     steps:
       - name: 拉取代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5  # 升级到支持Node.js 24的版本
 
       - name: 安装Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6  # 升级到支持Node.js 24的版本
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: 安装依赖
         run: pip install -r requirements.txt
@@ -23,7 +25,7 @@ jobs:
         run: python crawl_index.py
 
       - name: 提交数据
-        uses: EndBug/add-and-commit@v9
+        uses: EndBug/add-and-commit@v10  # 升级到支持Node.js 24的版本
         with:
           message: '自动更新指数数据'
           add: '*.csv *.html'
