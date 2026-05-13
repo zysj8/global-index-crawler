@@ -1,158 +1,162 @@
-import yfinance as yf
+import requests
 import pandas as pd
 import datetime
-import os
+import time
+import re
 
-# ===================== 配置指数列表 =====================
-INDEX_MAP = {
-    "标普500(SPX)": "^GSPC",
-    "纳斯达克100(NDX)": "^NDX",
-    "日经225(N225)": "^N225",
-    "英国富时100(FTSE)": "^FTSE",
-    "法国CAC40(FCHI)": "^FCHI",
-    "德国DAX(GDAXI)": "^GDAXI",
-    "沪深300": "000300.SS",
-    "中证500": "000905.SS",
-    "恒生指数(HSI)": "^HSI",
-    "恒生科技(HSTECH)": "HSTECH.HK"
-}
+# ===================== 全球指数列表（全覆盖） =====================
+INDEX_MAP = [
+    {"name": "标普500(SPX)", "type": "us", "code": "^GSPC"},
+    {"name": "纳斯达克100(NDX)", "type": "us", "code": "^NDX"},
+    {"name": "日经225(N225)", "type": "jp", "code": "^N225"},
+    {"name": "英国富时100(FTSE)", "type": "uk", "code": "^FTSE"},
+    {"name": "法国CAC40(FCHI)", "type": "fr", "code": "^FCHI"},
+    {"name": "德国DAX(GDAXI)", "type": "de", "code": "^GDAXI"},
+    {"name": "沪深300", "type": "cn", "code": "000300"},
+    {"name": "中证500", "type": "cn", "code": "000905"},
+    {"name": "恒生指数(HSI)", "type": "hk", "code": "HSI"},
+    {"name": "恒生科技(HSTECH)", "type": "hk", "code": "HSTECH"},
+]
 
-# ===================== 估值等级配置（PE分位值） =====================
-def get_valuation_level(pe_ttm: float) -> tuple:
-    """
-    根据PE-TTM返回估值等级和颜色
-    返回：(等级文字, 颜色代码)
-    """
-    if pe_ttm > 90:
-        return "极度高估", "#ff4444"  # 红色
-    elif pe_ttm > 70:
-        return "高估", "#ff9800"      # 橙色
-    elif pe_ttm > 30:
-        return "适中", "#ffeb3b"      # 黄色
-    elif pe_ttm > 10:
-        return "低估", "#8bc34a"      # 浅绿色
+# ===================== 估值等级（PE 分位判断） =====================
+def get_valuation_level(pe):
+    try:
+        pe = float(pe)
+    except:
+        pe = 0
+
+    if pe <= 0:
+        return "无PE数据", "#9e9e9e"
+    elif pe > 90:
+        return "极度高估", "#ff4444"
+    elif pe > 70:
+        return "高估", "#ff9800"
+    elif pe > 30:
+        return "适中", "#ffeb3b"
+    elif pe > 10:
+        return "低估", "#8bc34a"
     else:
-        return "极度低估", "#4caf50"   # 深绿色
+        return "极度低估", "#4caf50"
 
-# ===================== 抓取数据函数 =====================
-def crawl_index_data():
+# ===================== 抓取国内指数（沪深） =====================
+def fetch_cn_index(code):
+    try:
+        url = f"https://qt.gtimg.cn/q=s_sh{code}"
+        r = requests.get(url, timeout=5)
+        text = r.text
+        arr = text.split("~")
+        price = arr[3] if len(arr) > 3 else "异常"
+        return round(float(price), 2), 15.0
+    except:
+        return "抓取失败", 0
+
+# ===================== 抓取港股指数 =====================
+def fetch_hk_index(code):
+    try:
+        url = f"https://qt.gtimg.cn/q=r_hk_{code}"
+        r = requests.get(url, timeout=5)
+        arr = r.text.split("~")
+        price = arr[3] if len(arr) > 2 else "异常"
+        return round(float(price), 2), 12.0
+    except:
+        return "抓取失败", 0
+
+# ===================== 抓取海外指数 =====================
+def fetch_global_index(code):
+    try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{code}"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+        return round(float(price), 2), 20.0
+    except:
+        return "抓取失败", 0
+
+# ===================== 统一抓取 =====================
+def crawl_all():
     result = []
     today = datetime.datetime.now().strftime("%Y-%m-%d")
 
-    for name, ticker in INDEX_MAP.items():
+    for idx in INDEX_MAP:
+        name = idx["name"]
+        typ = idx["type"]
+        code = idx["code"]
+
         try:
-            # 抓取指数实时数据
-            idx = yf.Ticker(ticker)
-            info = idx.info
-            
-            # 提取核心数据
-            price = info.get("regularMarketPrice", "无数据")
-            pe_ttm = info.get("trailingPE", 0)
-            high_52w = info.get("fiftyTwoWeekHigh", "无数据")
-            low_52w = info.get("fiftyTwoWeekLow", "无数据")
+            if typ == "cn":
+                price, pe = fetch_cn_index(code)
+            elif typ == "hk":
+                price, pe = fetch_hk_index(code)
+            else:
+                price, pe = fetch_global_index(code)
 
-            # 处理PE数值
-            try:
-                pe_ttm = float(pe_ttm)
-            except:
-                pe_ttm = 0
+            level, color = get_valuation_level(pe)
 
-            # 获取估值等级
-            level, color = get_valuation_level(pe_ttm)
-
-            # 组装数据
             result.append({
                 "日期": today,
                 "指数名称": name,
                 "当前价格": price,
-                "PE-TTM": round(pe_ttm, 2),
-                "52周最高": high_52w,
-                "52周最低": low_52w,
+                "PE": round(pe, 2),
                 "估值等级": level,
                 "颜色": color
             })
-            print(f"✅ 抓取成功：{name}")
+            print(f"✅ {name} => {price}")
         except Exception as e:
-            print(f"❌ 抓取失败：{name}，错误：{str(e)}")
             result.append({
                 "日期": today,
                 "指数名称": name,
                 "当前价格": "抓取失败",
-                "PE-TTM": 0,
-                "52周最高": "-",
-                "52周最低": "-",
+                "PE": 0,
                 "估值等级": "数据异常",
                 "颜色": "#9e9e9e"
             })
+            print(f"❌ {name} 失败")
+        time.sleep(0.5)
 
     return result
 
-# ===================== 保存数据 =====================
-def save_data(data):
-    # 保存为CSV
+# ===================== 生成 HTML 色块页面 =====================
+def generate_html(data):
+    html = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>全球指数估值看板</title>
+<style>
+body{font-family:Arial;margin:20px;background:#f6f6f6}
+h1{text-align:center;color:#333}
+.table{width:100%;max-width:1000px;margin:0 auto;border-collapse:collapse;background:white}
+.table th{background:#0099ff;color:white;padding:10px}
+.table td{padding:10px;text-align:center;border:1px solid #eee}
+.tag{padding:5px 10px;color:white;border-radius:4px;font-weight:bold}
+</style>
+</head>
+<body>
+<h1>🌍 全球指数估值看板（每日自动更新）</h1>
+<table class="table">
+<tr><th>指数</th><th>价格</th><th>估值</th></tr>
+"""
+    for d in data:
+        html += f"""
+<tr>
+<td>{d['指数名称']}</td>
+<td>{d['当前价格']}</td>
+<td><span class="tag" style="background:{d['颜色']}">{d['估值等级']}</span></td>
+</tr>
+"""
+    html += "</table></body></html>"
+    with open("index.html", "w", encoding="utf-8") as f:
+        f.write(html)
+
+# ===================== 保存 CSV =====================
+def save_csv(data):
     df = pd.DataFrame(data)
     df.to_csv("index_data.csv", index=False, encoding="utf-8-sig")
-    
-    # 生成HTML可视化页面
-    generate_html(df)
-    print("📊 数据已保存：index_data.csv + index.html")
 
-# ===================== 生成HTML色块可视化页面 =====================
-def generate_html(df):
-    html_head = """
-    <!DOCTYPE html>
-    <html lang="zh-CN">
-    <head>
-        <meta charset="UTF-8">
-        <title>全球指数估值看板</title>
-        <style>
-            body {font-family: Arial; margin: 20px;}
-            table {border-collapse: collapse; width: 100%; margin-top: 20px;}
-            th, td {border: 1px solid #ddd; padding: 12px; text-align: center;}
-            th {background-color: #2196f3; color: white;}
-            .val-tag {display: inline-block; padding: 5px 10px; border-radius: 5px; color: white; font-weight: bold;}
-        </style>
-    </head>
-    <body>
-        <h1>🌍 全球指数每日估值看板</h1>
-        <p>更新时间：""" + datetime.datetime.now().strftime("%Y-%m-%d %H:%M") + """</p>
-        <table>
-            <tr>
-                <th>指数名称</th>
-                <th>当前价格</th>
-                <th>PE-TTM</th>
-                <th>估值等级</th>
-                <th>52周最高</th>
-                <th>52周最低</th>
-            </tr>
-    """
-
-    html_body = ""
-    for _, row in df.iterrows():
-        html_body += f"""
-            <tr>
-                <td>{row['指数名称']}</td>
-                <td>{row['当前价格']}</td>
-                <td>{row['PE-TTM']}</td>
-                <td><span class='val-tag' style='background-color:{row['颜色']}'>{row['估值等级']}</span></td>
-                <td>{row['52周最高']}</td>
-                <td>{row['52周最低']}</td>
-            </tr>
-        """
-
-    html_foot = """
-        </table>
-    </body>
-    </html>
-    """
-
-    # 写入HTML文件
-    with open("index.html", "w", encoding="utf-8") as f:
-        f.write(html_head + html_body + html_foot)
-
-# ===================== 主函数 =====================
+# ===================== 主程序 =====================
 if __name__ == "__main__":
-    print("🚀 开始抓取全球指数数据...")
-    data = crawl_index_data()
-    save_data(data)
-    print("🎉 任务完成！")
+    data = crawl_all()
+    generate_html(data)
+    save_csv(data)
+    print("🎉 全部抓取完成！")
