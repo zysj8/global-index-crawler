@@ -1,58 +1,33 @@
-name: 每日全球指数抓取
+name: 每日韭圈儿指数抓取
 on:
   schedule:
-    - cron: '0 10 * * *'  # 北京时间18:00运行
-  workflow_dispatch:      # 支持手动触发
+    - cron: '0 10 * * *'
+  workflow_dispatch:
 
 jobs:
   crawl:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pages: write
-      id-token: write
     steps:
       - name: 拉取代码
         uses: actions/checkout@v5
 
-      - name: 安装Python
+      - name: 设置Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: 安装依赖
-        run: pip install -r requirements.txt
+      - name: 安装依赖 & 浏览器
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
 
-      - name: 执行爬虫
+      - name: 运行爬虫
         run: python crawl_index.py
 
-      - name: 提交数据
+      - name: 提交更新文件
         uses: EndBug/add-and-commit@v10
         with:
-          message: '自动更新指数数据'
-          add: '*.csv *.html'
-
-  deploy:
-    needs: crawl
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: 拉取代码
-        uses: actions/checkout@v5
-
-      - name: 设置Pages
-        uses: actions/configure-pages@v5
-
-      - name: 上传网页文件
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: '.'
-
-      - name: 部署到GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          message: "自动更新指数数据"
+          add: "index.html index_data.csv"
