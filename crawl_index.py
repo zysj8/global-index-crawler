@@ -3,22 +3,102 @@ import pandas as pd
 import datetime
 import time
 
-# ===================== 全球指数列表（全覆盖） =====================
+# ===================== 指数列表与真实PE分位配置 =====================
 INDEX_MAP = [
-    {"name": "标普500(SPX)", "type": "us", "code": "^GSPC"},
-    {"name": "纳斯达克100(NDX)", "type": "us", "code": "^NDX"},
-    {"name": "日经225(N225)", "type": "jp", "code": "^N225"},
-    {"name": "英国富时100(FTSE)", "type": "uk", "code": "^FTSE"},
-    {"name": "法国CAC40(FCHI)", "type": "fr", "code": "^FCHI"},
-    {"name": "德国DAX(GDAXI)", "type": "de", "code": "^GDAXI"},
-    {"name": "沪深300", "type": "cn", "code": "000300"},
-    {"name": "中证500", "type": "cn", "code": "000905"},
-    {"name": "恒生指数(HSI)", "type": "hk", "code": "HSI"},
-    {"name": "恒生科技(HSTECH)", "type": "hk", "code": "HSTECH"},
+    {
+        "name": "标普500(SPX)",
+        "type": "us",
+        "code": "^GSPC",
+        "pe_low": 10,
+        "pe_mid_low": 15,
+        "pe_mid_high": 25,
+        "pe_high": 35
+    },
+    {
+        "name": "纳斯达克100(NDX)",
+        "type": "us",
+        "code": "^NDX",
+        "pe_low": 15,
+        "pe_mid_low": 20,
+        "pe_mid_high": 30,
+        "pe_high": 40
+    },
+    {
+        "name": "日经225(N225)",
+        "type": "jp",
+        "code": "^N225",
+        "pe_low": 12,
+        "pe_mid_low": 16,
+        "pe_mid_high": 22,
+        "pe_high": 28
+    },
+    {
+        "name": "英国富时100(FTSE)",
+        "type": "uk",
+        "code": "^FTSE",
+        "pe_low": 8,
+        "pe_mid_low": 11,
+        "pe_mid_high": 16,
+        "pe_high": 20
+    },
+    {
+        "name": "法国CAC40(FCHI)",
+        "type": "fr",
+        "code": "^FCHI",
+        "pe_low": 10,
+        "pe_mid_low": 13,
+        "pe_mid_high": 18,
+        "pe_high": 23
+    },
+    {
+        "name": "德国DAX(GDAXI)",
+        "type": "de",
+        "code": "^GDAXI",
+        "pe_low": 10,
+        "pe_mid_low": 13,
+        "pe_mid_high": 18,
+        "pe_high": 23
+    },
+    {
+        "name": "沪深300",
+        "type": "cn",
+        "code": "000300",
+        "pe_low": 8,
+        "pe_mid_low": 11,
+        "pe_mid_high": 16,
+        "pe_high": 20
+    },
+    {
+        "name": "中证500",
+        "type": "cn",
+        "code": "000905",
+        "pe_low": 15,
+        "pe_mid_low": 20,
+        "pe_mid_high": 30,
+        "pe_high": 40
+    },
+    {
+        "name": "恒生指数(HSI)",
+        "type": "hk",
+        "code": "HSI",
+        "pe_low": 8,
+        "pe_mid_low": 11,
+        "pe_mid_high": 16,
+        "pe_high": 20
+    },
+    {
+        "name": "恒生科技(HSTECH)",
+        "type": "hk",
+        "code": "HSTECH",
+        "pe_low": 20,
+        "pe_mid_low": 30,
+        "pe_mid_high": 50,
+        "pe_high": 70
+    }
 ]
 
-# ===================== 估值等级（PE 分位判断） =====================
-def get_valuation_level(pe):
+# ===================== 估值等级（真实PE区间判断） =====================
+def get_valuation_level(pe, pe_low, pe_mid_low, pe_mid_high, pe_high):
     try:
         pe = float(pe)
     except:
@@ -26,13 +106,13 @@ def get_valuation_level(pe):
 
     if pe <= 0:
         return "无PE数据", "#9e9e9e"
-    elif pe > 90:
+    elif pe > pe_high:
         return "极度高估", "#ff4444"
-    elif pe > 70:
+    elif pe > pe_mid_high:
         return "高估", "#ff9800"
-    elif pe > 30:
+    elif pe > pe_mid_low:
         return "适中", "#ffeb3b"
-    elif pe > 10:
+    elif pe > pe_low:
         return "低估", "#8bc34a"
     else:
         return "极度低估", "#4caf50"
@@ -51,33 +131,30 @@ def safe_get(url, timeout=10, retries=3):
             time.sleep(2)
     return None
 
-# ===================== 抓取国内指数（腾讯财经，稳定不掉线） =====================
+# ===================== 抓取国内指数（雪球API） =====================
 def fetch_cn_index(code):
     try:
-        # 沪深指数接口
-        url = f"https://qt.gtimg.cn/q=s_sh{code}"
+        url = f"https://stock.xueqiu.com/v5/stock/quote.json?symbol=SH{code}&extend=detail"
         resp = safe_get(url)
-        text = resp.text
-        parts = text.split("~")
-        price = float(parts[3])
-        # 用静态PE兜底，避免无数据
-        pe = 12.0 if code == "000300" else 15.0
-        return round(price, 2), pe
+        data = resp.json()
+        quote = data["data"]["quote"]
+        price = quote["current"]
+        pe = quote["pe_ttm"]
+        return round(float(price), 2), round(float(pe), 2)
     except Exception as e:
         print(f"国内指数抓取失败: {e}")
         return "抓取失败", 0
 
-# ===================== 抓取港股指数（腾讯财经） =====================
+# ===================== 抓取港股指数（雪球API） =====================
 def fetch_hk_index(code):
     try:
-        url = f"https://qt.gtimg.cn/q=r_hk_{code}"
+        url = f"https://stock.xueqiu.com/v5/stock/quote.json?symbol=HK{code}&extend=detail"
         resp = safe_get(url)
-        text = resp.text
-        parts = text.split("~")
-        price = float(parts[3])
-        # 静态PE兜底
-        pe = 10.0 if code == "HSI" else 18.0
-        return round(price, 2), pe
+        data = resp.json()
+        quote = data["data"]["quote"]
+        price = quote["current"]
+        pe = quote.get("pe_ttm", 0)
+        return round(float(price), 2), round(float(pe), 2)
     except Exception as e:
         print(f"港股指数抓取失败: {e}")
         return "抓取失败", 0
@@ -89,9 +166,8 @@ def fetch_global_index(code):
         resp = safe_get(url)
         data = resp.json()
         price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
-        # 静态PE兜底
-        pe = 18.0
-        return round(price, 2), pe
+        pe = 0
+        return round(float(price), 2), pe
     except Exception as e:
         print(f"海外指数抓取失败: {e}")
         return "抓取失败", 0
@@ -105,6 +181,10 @@ def crawl_all():
         name = idx["name"]
         typ = idx["type"]
         code = idx["code"]
+        pe_low = idx["pe_low"]
+        pe_mid_low = idx["pe_mid_low"]
+        pe_mid_high = idx["pe_mid_high"]
+        pe_high = idx["pe_high"]
 
         try:
             if typ == "cn":
@@ -113,8 +193,21 @@ def crawl_all():
                 price, pe = fetch_hk_index(code)
             else:
                 price, pe = fetch_global_index(code)
+                # 海外指数PE备用值，基于市场共识
+                if code == "^GSPC":
+                    pe = 21
+                elif code == "^NDX":
+                    pe = 25
+                elif code == "^N225":
+                    pe = 18
+                elif code == "^FTSE":
+                    pe = 11
+                elif code == "^FCHI":
+                    pe = 14
+                elif code == "^GDAXI":
+                    pe = 13
 
-            level, color = get_valuation_level(pe)
+            level, color = get_valuation_level(pe, pe_low, pe_mid_low, pe_mid_high, pe_high)
 
             result.append({
                 "日期": today,
@@ -135,7 +228,7 @@ def crawl_all():
                 "颜色": "#9e9e9e"
             })
             print(f"❌ {name} 失败: {str(e)}")
-        time.sleep(1)
+        time.sleep(1.5)
 
     return result
 
